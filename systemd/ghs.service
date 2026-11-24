@@ -1,0 +1,13 @@
+[Unit]
+Description=GHS experiment scheduler
+
+[Service]
+Type=exec
+ExecStart=%h/.local/bin/ghs daemon
+Restart=on-failure
+RestartSec=3s
+# Each runner must survive daemon restarts so its experiment can be recovered.
+KillMode=process
+
+[Install]
+WantedBy=default.target

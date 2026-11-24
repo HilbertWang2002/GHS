@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "project": "sha256",
+  "description": "测量单个进程计算 32 MiB SHA-256 的耗时",
+  "purpose": "validation",
+  "runs": [
+    {
+      "name": "CPU 验证",
+      "parameters": {
+        "bytes": 33554432
+      },
+      "code_ref": "embedded-command-v1",
+      "stages": [
+        {
+          "name": "计算摘要",
+          "command": [
+            "python3",
+            "-c",
+            "import hashlib, json, os, time\nfrom pathlib import Path\n\ndata = bytes(1024 * 1024)\ndigest = hashlib.sha256()\nstart = time.perf_counter()\nfor _ in range(32):\n    digest.update(data)\nelapsed = time.perf_counter() - start\noutput = Path(os.environ['GHS_OUTPUT_DIR']) / 'sha256.txt'\noutput.write_text(digest.hexdigest() + '\\n')\nobservation = dict(version=1, metric='elapsed', value=elapsed, unit='s', direction='min',\n                   location='sha256.update loop', protocol='sha256-32MiB-v1', source='artifacts/sha256.txt')\nPath(os.environ['GHS_RESULTS']).write_text(json.dumps(observation) + '\\n')\nprint(f'Hashed 32 MiB in {elapsed:.6f} s')\n"
+          ],
+          "resources": {
+            "cpus": 1,
+            "gpus": 0
+          },
+          "artifacts": [
+            "sha256.txt"
+          ]
+        }
+      ]
+    }
+  ]
+}
