@@ -66,6 +66,7 @@ poll_interval_seconds = 5
 - `max_gpus` 限制同一 daemon 下所有批次合计预留的物理 GPU 张数。设为 4 时，若已用 3 张，申请 2 张的阶段会排队，之后申请 1 张的阶段仍可运行。单个阶段申请量超过上限时也会排队，调高上限后重新判断。降低上限保留运行中的尝试，设为 0 暂停新 GPU 分配，省略时不设数量上限。
 - daemon 每轮核对尝试状态、重读配置并调度，然后等待 `poll_interval_seconds` 秒（默认 5）。有 GPU 请求通过名额检查时，同一轮共享一次 NVML 采样，之后每次分配都会更新预留。单次 `ghs status` 或 MCP `get_gpu_status` 会即时采样，`ghs status --watch` 按配置的周期刷新。结构化快照包含 `run_counts`、`active_attempts`、`reserved_gpus`、`max_gpus` 和 `poll_interval_seconds`。
 - GPU 状态涵盖池外设备、计算及图形进程、当前预留和采集错误。每卡按外部 PID 去重后累加字节数，占比达到阈值即停止新分配。无法核实进程或显存时显示 `needs_review` 和原因。
+- runner 退出且缺少退出记录时，其任务仍需核查并保留 GPU 预留。其他进程的完整祖先链和会话均未匹配该 runner，且身份记录完整、属于本次开机时，可正常识别为外部进程；不会因无关 runner 退出而让所有 GPU 显示 `CHECK`。匹配到失效 runner、身份记录缺失或采样失败仍显式报错。
 - 运行的 `priority` 越大越先调度，同优先级按阶段登记顺序。允许资源充足的阶段先运行。前置阶段成功后才执行后继阶段。
 - 每个 run 采用 fail-fast：任一阶段失败，立即停止该 run 的后续调度，未执行阶段标记为 `skipped`，运行中的其他阶段由原 runner 取消。其他 run 继续执行。清理期间 run 显示 `failing`（失败清理中），全部尝试确认退出后显示 `failed`。失败阶段、尝试 ID 和原因保存在 `ghs get` 的 `failure` 中。
 - runner 在单独的 Linux 会话中运行，并作为 subreaper 等待整个后代进程树。取消请求由原 runner 执行，使用 SIGKILL 清理其后代。daemon 接到退出记录后释放预留。身份无法核实时保留资源并显示具体错误，不能把已请求取消当作已退出。

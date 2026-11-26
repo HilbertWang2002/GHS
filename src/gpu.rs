@@ -146,7 +146,14 @@ fn owner(
                 .identity
                 .as_ref()
                 .map_err(|e| anyhow::anyhow!("unverified runner {}: {e:#}", r.owner.attempt_id))?;
-            i.verify(&r.owner.attempt_id, boot)?;
+            // A fully traversed process ancestry did not match this runner.
+            // Its death must not make unrelated GPU processes unclassifiable.
+            // Keep malformed or foreign-boot identities explicit errors; matching
+            // runners are still verified by resolve above.
+            ensure!(
+                i.version == 1 && i.attempt_id == r.owner.attempt_id && i.boot_id == boot,
+                "runner record or boot ID mismatch"
+            );
         }
     }
     Ok((first.name, found))
@@ -349,6 +356,57 @@ mod tests {
             poll_interval_seconds: 5,
             t3code: Default::default(),
         }
+    }
+    #[test]
+    fn dead_unrelated_runner_does_not_poison_process_ownership() {
+        let boot = process::boot_id().unwrap();
+        let pid = std::process::id();
+        let mut reservation = Reservation {
+            owner: Owner {
+                run_id: "r".into(),
+                stage_id: "s".into(),
+                attempt_id: "a".into(),
+                purpose: "experiment".into(),
+            },
+            cpus: 1,
+            gpus: vec!["GPU-test".into()],
+            identity: Ok(Identity {
+                version: 1,
+                attempt_id: "a".into(),
+                boot_id: boot.clone(),
+                pid: u32::MAX,
+                start: 0,
+            }),
+        };
+        assert!(
+            reservation
+                .identity
+                .as_ref()
+                .unwrap()
+                .verify("a", &boot)
+                .is_err()
+        );
+        assert!(
+            owner(pid, std::slice::from_ref(&reservation), &boot, u64::MAX)
+                .unwrap()
+                .1
+                .is_none()
+        );
+
+        // An unrelated dead runner still reserves its assigned GPU.
+        let mut device = card();
+        device.decide(&config(5), std::slice::from_ref(&reservation), &[]);
+        assert_eq!(device.state, "reserved");
+
+        // A matching but invalid runner must never be counted as managed.
+        reservation.identity.as_mut().unwrap().pid = pid;
+        assert!(owner(pid, std::slice::from_ref(&reservation), &boot, u64::MAX).is_err());
+
+        reservation.identity.as_mut().unwrap().pid = u32::MAX;
+        reservation.identity.as_mut().unwrap().boot_id = "another-boot".into();
+        assert!(owner(pid, std::slice::from_ref(&reservation), &boot, u64::MAX).is_err());
+        reservation.identity = Err(anyhow::anyhow!("missing identity"));
+        assert!(owner(pid, &[reservation], &boot, u64::MAX).is_err());
     }
     #[test]
     fn one_byte_boundary_sum_and_scheduler_agree() {
