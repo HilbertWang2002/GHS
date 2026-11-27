@@ -155,7 +155,7 @@ impl Service {
             .map(|l| serde_json::from_str(l).unwrap())
             .collect();
         assert_eq!(lines[0]["result"]["protocolVersion"], "2025-06-18");
-        assert_eq!(lines[1]["result"]["tools"].as_array().unwrap().len(), 14);
+        assert_eq!(lines[1]["result"]["tools"].as_array().unwrap().len(), 15);
         assert_eq!(lines[2]["result"]["isError"], false, "{}", lines[2]);
         lines[2]["result"]["structuredContent"].clone()
     }
@@ -1324,4 +1324,55 @@ fn upgrade_adopts_existing_failures_before_scheduling_independent_stages() {
     );
     assert_eq!(restored["stages"][1]["state"], "skipped");
     assert_eq!(restored["stages"][1]["attempts"], json!([]));
+}
+
+#[test]
+fn manual_recovery_releases_reservation_and_survives_restart() {
+    let mut s = Service::new();
+    let receipt = s.submit(
+        "recover",
+        &manifest(json!([
+            {"name":"first","stages":[stage("hold","exec sleep 30")]},
+            {"name":"second","stages":[stage("after","true")]}
+        ])),
+    );
+    let run = rid(&receipt, 0);
+    let live = s.state(run, "running");
+    let aid = attempt(&live, 0, 0);
+    assert!(
+        !s.exec(&["recover", aid, "--confirm-stopped"])
+            .status
+            .success()
+    );
+    let dir = Path::new(
+        live["stages"][0]["attempts"][0]["directory"]
+            .as_str()
+            .unwrap(),
+    );
+    let identity: Value = read_json(&dir.join("identity.json")).unwrap();
+    s.stop();
+    let pid = identity["pid"].as_i64().unwrap() as i32;
+    assert_eq!(unsafe { libc::kill(-pid, libc::SIGKILL) }, 0);
+    s.start();
+    s.state(run, "needs_review");
+    assert!(!s.exec(&["recover", aid]).status.success());
+    assert_eq!(
+        s.cli(&["recover", aid, "--confirm-stopped"])["state"],
+        "cancelled"
+    );
+    s.state(rid(&receipt, 1), "succeeded");
+    s.stop();
+    s.start();
+    let recovered = s.state(run, "cancelled");
+    assert!(
+        recovered["stages"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("operator confirmed")
+    );
+    assert!(
+        !s.exec(&["recover", aid, "--confirm-stopped"])
+            .status
+            .success()
+    );
 }

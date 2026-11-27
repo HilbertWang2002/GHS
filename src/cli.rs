@@ -94,6 +94,13 @@ pub enum Action {
     Cancel { attempt_id: String },
     #[command(alias = "retry-stage")]
     Retry { stage_id: String },
+    /// 核实所有残留进程已退出后，将 needs_review 尝试取消并释放预留
+    Recover {
+        attempt_id: String,
+        /// 确认 runner 及所有后代进程均已退出；本命令不会终止进程
+        #[arg(long, required = true)]
+        confirm_stopped: bool,
+    },
     /// 清理完成后重试失败的整个 run，保留成功阶段
     RetryRun { run_id: String },
     /// 手动重新投递失败的唤醒通知
@@ -221,6 +228,13 @@ pub fn run(action: Action, socket: &Path, json: bool) -> Result<()> {
         },
         Action::Artifacts { run_id, attempt_id } => Request::ListArtifacts { run_id, attempt_id },
         Action::Cancel { attempt_id } => Request::CancelAttempt { attempt_id },
+        Action::Recover {
+            attempt_id,
+            confirm_stopped,
+        } => Request::RecoverAttempt {
+            attempt_id,
+            confirm_stopped,
+        },
         Action::Retry { stage_id } => Request::RetryStage { stage_id },
         Action::RetryRun { run_id } => Request::RetryRun { run_id },
         Action::RetryWake {

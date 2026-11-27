@@ -366,6 +366,36 @@ impl Store {
             .sync_all()?;
         self.attempt_state(&a.attempt_id, &a.stage_id, "cancelling", None)
     }
+    pub fn recover(&mut self, aid: &str, confirm_stopped: bool) -> Result<Value> {
+        ensure!(
+            confirm_stopped,
+            "recovery requires confirm_stopped=true after verifying the runner and all descendants have exited"
+        );
+        let (a, _) = self.attempt(aid)?;
+        let imported: bool =
+            self.db
+                .query_row("SELECT imported FROM runs WHERE id=?", [&a.run_id], |r| {
+                    r.get(0)
+                })?;
+        ensure!(!imported, "historical run is read-only");
+        // Consume newly available exit evidence before accepting a manual resolution.
+        self.reconcile()?;
+        let state: String =
+            self.db
+                .query_row("SELECT state FROM attempts WHERE id=?", [aid], |r| r.get(0))?;
+        ensure!(
+            state == "needs_review",
+            "recover requires a needs_review attempt (state {state})"
+        );
+        self.attempt_state(
+            aid,
+            &a.stage_id,
+            "cancelled",
+            Some("manually recovered: operator confirmed runner and all descendants have exited"),
+        )?;
+        Ok(json!({"attempt_id":aid,"stage_id":a.stage_id,"state":"cancelled"}))
+    }
+
     pub fn retry(&mut self, sid: &str) -> Result<Value> {
         let (state, imported): (String, bool) = self
             .db

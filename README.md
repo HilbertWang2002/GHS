@@ -209,3 +209,11 @@ GHS_TEST_T3_BASE_DIR=/absolute/path/to/t3-data \
 GHS_TEST_T3_THREAD_ID=explicit-test-thread-id \
   cargo test --locked --test service live_t3_wake_returns_a_matching_receipt -- --ignored
 ```
+
+### 恢复 CHECK / needs_review
+
+服务异常退出且无法验证 runner 身份时，GHS 保留资源预留。先用 `ghs get @编号` 找到 attempt ID，并结合进程列表、GPU 进程及尝试目录核查 runner 和所有后代进程均已退出。显存低或原 runner PID 消失本身不能证明后代已退出。
+
+确认后执行 `ghs recover ATTEMPT_ID --confirm-stopped`（MCP：`recover_attempt`，`confirm_stopped: true`）。该命令在线原子更新尝试与阶段为 `cancelled`，释放 CPU/GPU 预留，保留日志并记录人工恢复原因，无需停止服务或修改数据库。命令依赖操作者的退出确认，不终止进程、不伪造退出记录、不自动重跑；错误确认可能导致资源重叠。它仅接受本地 `needs_review` 尝试；新出现的退出证据会先正常结算。
+
+之后可用 `ghs retry STAGE_ID` 重跑；已触发 fail-fast 的 run 须等所有尝试清理完成后使用 `ghs retry-run @编号`。

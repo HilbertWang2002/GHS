@@ -810,6 +810,10 @@ pub fn render(req: &Request, v: &Value, ids: bool) -> Result<String> {
             Ok(lines.join("\n"))
         }
         Request::CancelAttempt { .. } => Ok(format!("已请求取消尝试 {}", cell(&v["attempt_id"]))),
+        Request::RecoverAttempt { .. } => Ok(format!(
+            "尝试 {} 已取消，资源预留已释放",
+            cell(&v["attempt_id"])
+        )),
         Request::RetryStage { .. } => Ok(format!("阶段 {} 已重新排队", cell(&v["stage_id"]))),
         Request::RetryRun { .. } => Ok(format!(
             "运行 {} 的 {} 个未成功阶段已重新排队",

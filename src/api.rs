@@ -71,6 +71,10 @@ pub enum Request {
     CancelAttempt {
         attempt_id: String,
     },
+    RecoverAttempt {
+        attempt_id: String,
+        confirm_stopped: bool,
+    },
     RetryStage {
         stage_id: String,
     },
@@ -235,6 +239,10 @@ impl Store {
                 self.artifacts(&self.resolve_run(&run_id)?, attempt_id.as_deref())
             }
             Request::CancelAttempt { attempt_id } => self.cancel(&attempt_id),
+            Request::RecoverAttempt {
+                attempt_id,
+                confirm_stopped,
+            } => self.recover(&attempt_id, confirm_stopped),
             Request::RetryStage { stage_id } => self.retry(&stage_id),
             Request::RetryRun { run_id } => self.retry_run(&self.resolve_run(&run_id)?),
             Request::RetryWake {
@@ -407,6 +415,12 @@ pub fn tool_list() -> Value {
             "Cancel a live attempt and its descendants.",
             &[("attempt_id", "string")],
             &["attempt_id"],
+        ),
+        tool(
+            "recover_attempt",
+            "After manually verifying the runner and all descendants have stopped, cancel a needs_review attempt and release reservations. Does not kill processes or retry work.",
+            &[("attempt_id", "string"), ("confirm_stopped", "boolean")],
+            &["attempt_id", "confirm_stopped"],
         ),
         tool(
             "retry_stage",
